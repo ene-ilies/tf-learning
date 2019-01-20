@@ -1,84 +1,44 @@
+import argparse
 import sys
 import os
-import librosa
-import librosa.display
-import matplotlib.pyplot as plt
 import numpy as np
 import time
-from PIL import Image
 import augmentation as aug
+import helpers
 
-if len(sys.argv) != 4:
-	print("files not provided.")
-	exit(1)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    '-f', '--file',
+    help='Text file containing on each line a path to a wav file to be processed. Each path has to be relative to parent dir of this file.')
+parser.add_argument(
+    '-o', '--outputdir',
+    help='Directory where to save generated images.')
+parser.add_argument(
+    '-l', '--labelsfile',
+    help='Text file containing on each line a label.')
+args = parser.parse_args()
 
-recordsFile = sys.argv[1]
-inputDir = os.path.dirname(recordsFile) + "/"
-outputDir = sys.argv[2]
-save = sys.argv[3] == "True"
-augmentedOutputDir = "augmented/"
+recordsFile = args.file
+inputDir = os.path.dirname(recordsFile) + os.path.sep
+outputDir = os.path.join(args.outputdir, "")
 
-classes = ["yes", "no"]
+classes = helpers.readlines(args.labelsfile)
 
-def convertToLogMelSpectrogram(data, sampleRate):
-	melSpectrogram = librosa.feature.melspectrogram(y=data, sr=sampleRate, n_mels=128, hop_length=252, power=2.0)
-	return melSpectrogram
-	#return librosa.power_to_db(melSpectrogram,
-         #       ref=np.max)
-
-def displaySpectrogram(spectrogram):
-	plt.figure(figsize=(10, 4))
-	librosa.display.specshow(spectrogram,
-		y_axis='mel', fmax=8000,
-		x_axis='time')
-	plt.colorbar(format='%+2.0f dB')
-	plt.title('Mel spectrogram')
-	plt.tight_layout()
-	plt.show()
-
-def makeSureDirectoryExists(fileName):
-	directory = os.path.dirname(fileName)
-	if not os.path.exists(directory):
-		print("Creating directory: %s", directory)
-		os.makedirs(directory)
-
-def saveSpectrogram(outputFile, spectrogram):
-	makeSureDirectoryExists(outputFile)
-	print("Saving spectrogram to: %s, with size: %s" % (outputFile, str(spectrogram.shape)))
-	Image.fromarray(spectrogram).save(outputFile)
-
-def saveWav(outputFile, data, sampleRate):
-	makeSureDirectoryExists(outputFile)
-	print("Saving to: %s, at sampleRate: %s" % (outputFile, sampleRate) )
-	librosa.output.write_wav(outputFile, data, sampleRate)
-
-with open(recordsFile, 'r') as f:
-	records = [line.rstrip('\n') for line in f]
+records = helpers.readlines(recordsFile);
 
 for record in records:
 	print("Processing: ", record)
 	label, _ = record.split("/")
 	print("label: %s, file: %s" % (label, record))
-	if save or (label in classes):
-		data, sampleRate = librosa.load(inputDir + record, sr=None)
-		for i in range(1):
+	if (label in classes):
+		data, sampleRate = helpers.readwav(inputDir + record)
+		for i in range(16):
 			augmentedData = aug.applyAugmentation(data, sampleRate)
 			print("data shape: ", augmentedData.shape)
 			print("data: ", augmentedData)
-			augmentedWavPath = augmentedOutputDir + record
-			#saveWav(augmentedWavPath, augmentedData, sampleRate)
-			#saveWav(augmentedWavPath + "orig.wav", data, sampleRate)
-			spectrogram = convertToLogMelSpectrogram(augmentedData, sampleRate)
-			#displaySpectrogram(spectrogram)
-			#print("first: \n", spectrogram)
-			#spectrogram = spectrogram[:,:,np.newaxis].astype(np.uint8)
+			spectrogram = helpers.convertToLogMelSpectrogram(augmentedData, sampleRate)
 			spectrogram = spectrogram * 64
-			#print("second: \n", spectrogram)
-			#displaySpectrogram(spectrogram)
 			spectrogram = spectrogram.astype(np.uint8)
-			#print("third: \n", spectrogram)
-			#displaySpectrogram(spectrogram)
 			outputFile = outputDir + record + "-%s.png" % time.time()
-			saveSpectrogram(outputFile, spectrogram)
-		break
+			helpers.saveSpectrogram(outputFile, spectrogram)
 

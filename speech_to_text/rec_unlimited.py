@@ -11,6 +11,7 @@ import sys
 import librosa
 import numpy as np
 from inferencer import SpeechToTextInferencer
+import helpers
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -19,19 +20,10 @@ def int_or_str(text):
     except ValueError:
         return text
 
-def convertToLogMelSpectrogram(data, sampleRate):
-    melSpectrogram = librosa.feature.melspectrogram(y=data, sr=sampleRate, n_mels=128, hop_length=252, power=2.0)
-    return melSpectrogram
-
-def convertToSpectrogramImage(data, sampleRate):
-    spectrogram = convertToLogMelSpectrogram(data, sampleRate)
-    spectrogram = spectrogram.astype(np.uint8)
-    return spectrogram
-
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
-    '-l', '--list-devices', action='store_true',
+    '-ld', '--list-devices', action='store_true',
     help='show list of audio devices and exit')
 parser.add_argument(
     '-d', '--device', type=int_or_str,
@@ -47,6 +39,12 @@ parser.add_argument(
     help='audio file to store recording to')
 parser.add_argument(
     '-t', '--subtype', type=str, help='sound file subtype (e.g. "PCM_24")')
+parser.add_argument(
+    '-cp', '--checkpointdir',
+    help='Directory where to read checkpoint file from.')
+parser.add_argument(
+    '-l', '--labelsfile',
+    help='Text file containing on each line a label.')
 args = parser.parse_args()
 
 currentOffset = 0
@@ -91,7 +89,8 @@ try:
     q = queue.Queue()
     buffer = np.zeros(args.targetsamplerate)
     
-    speechToTextInferencer = SpeechToTextInferencer()
+    labels = helpers.readlines(args.labelsfile)
+    speechToTextInferencer = SpeechToTextInferencer(args.checkpointdir, labels)
 
     # Make sure the file is opened before recording anything:
     with sf.SoundFile(args.filename, mode='x', samplerate=args.targetsamplerate,
@@ -104,8 +103,9 @@ try:
             while True:
                 data = q.get()
                 file.write(data)
-                image = convertToSpectrogramImage(data, args.targetsamplerate)
-                print("predictions: ", speechToTextInferencer.infer(image))
+                
+                spectrogram = helpers.convertToLogMelSpectrogram(data, args.targetsamplerate)
+                print("predictions: ", speechToTextInferencer.infer(spectrogram))
 
 except KeyboardInterrupt:
     print('\nRecording finished: ' + repr(args.filename))
